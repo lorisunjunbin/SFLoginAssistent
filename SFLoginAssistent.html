@@ -1,0 +1,506 @@
+<!-- Author:Lori Sun, Version:1.0-->
+<html>
+
+<head>
+    <title>~SFLoginAssistent~</title>
+</head>
+
+<body id='body'>
+
+    <div id="disclaimer" style="display:none">
+        <p>
+            Why - Successfactors already disabled url login, SFLoginAssistent is a tool for building necessary login
+            form and easily login with different accounts/environments/companies, also providing handy features:
+            Filtering / Sorting / Export & Import CSV file.
+        </p>
+        <p>
+            How - Open as file via Chrome(tested) or other modern browsers which supported localStorage & js ES6 syntax.
+        </p>
+
+        <h3 style="color:red;font-weight: bold;font-style: oblique ">
+            Please kindly notice below settings only save in localStorage of each browser, so clean browser cache
+            history
+            may delete your settings, keep in mind backup by clicking <a href="javascript:exportCSV()"><span>Export to
+                    CSV</span></a> before *Cleaning your browser*... <a
+                href="javascript:ackonwledge()"><span>Acknowledge to hide chapter above.</span></a>
+        </h3>
+    </div>
+
+
+    <div style="padding: 20px;">
+
+        <a class="file">Import from CSV
+            <input type="file" id="import" accept="text/csv" />
+        </a>
+
+        <a href="javascript:exportCSV()" class="file">Export to CSV</a>
+
+    </div>
+
+    <div style="padding: 20px;">
+
+        <input id="sort" class="input-field" value="" style="color:#f0ab00;font-weight:bold;" onkeyup="changeSort()"
+            placeholder="search / sorter" />
+        <input id="company" class="input-field" value="puchoumanaT1" placeholder="company" />
+        <input id="username" class="input-field" value="PSADMIN" placeholder="username" />
+        <input id="password" class="input-field" type="password" value="12345" placeholder="password" />
+        <input id="url" class="input-field" style="width:300px" value="https://performancemanager15.sapsf.cn/login"
+            placeholder="login url" />
+
+        <a href="javascript:appendRecord()"><span style='margin:0px 10px'>Create</span></a>
+        <a href="javascript:reset()"><span style='margin:0px 10px'>Reset</span></a>
+
+    </div>
+    <div>
+        <span class="find-records" id="recordcount"></span>
+    </div>
+    <div id='existing' class="lastsection">
+
+    </div>
+</body>
+
+<script type="text/javascript">
+
+    const global_separater = '~@~';
+    const global_disclaimer = "acknowledged_sf_login_assit_disclaimer";
+    const global_data_key_pref = "sf_login_form_";
+    const global_BOM = '\uFEFF';
+    const global_csv_filename = 'SFLoginAssistent';
+
+    function reset() {
+
+        resetEleValue("company");
+        resetEleValue("username");
+        resetEleValue("password");
+        resetEleValue("url");
+        resetEleValue("sort");
+        resetEleValue("import");
+
+        reload();
+    }
+
+    function exportCSV() {
+        const data = getDataArrFromLocalStorage(getFilter());
+        if (!data || data.length === 0) {
+            alert('No data to export.');
+            return;
+        }
+
+        const csv = arrayToCsv(data);
+        let count = data.length;
+        let fileName = prompt(count + ' Records will save as', global_csv_filename + '_' + count + 'Records.csv');
+
+        if (!fileName)
+            return;
+
+        if (navigator.msSaveOrOpenBlob) {
+            let blob = new Blob([global_BOM + csv], { type: 'text/csv;charset=utf-8;' });
+            navigator.msSaveOrOpenBlob(blob, fileName);
+        } else {
+            let uri = encodeURI(`data:text/csv;charset=utf-8,${global_BOM}${csv}`);
+            let downloadLink = document.createElement('a');
+            downloadLink.href = uri;
+            downloadLink.download = fileName;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        }
+    }
+
+    function arrayToCsv(data, args = {}) {
+        let columnDelimiter = args.columnDelimiter || ',';
+        let lineDelimiter = args.lineDelimiter || '\n';
+        let csv;
+        return data.reduce((csv, row) => {
+            const rowContent = Array.isArray(row)
+                ? row.reduce((rowTemp, col) => {
+                    let ret = rowTemp ? rowTemp + columnDelimiter : rowTemp;
+                    if (col) {
+                        let formatedCol = col.toString().replace(new RegExp(lineDelimiter, 'g'), ' ');
+                        ret += /,/.test(formatedCol) ? `"${formatedCol}"` : formatedCol;
+                    }
+                    return ret;
+                }, '')
+                : row;
+            return (csv ? csv + lineDelimiter : '') + rowContent;
+        }, '');
+    }
+
+    function csvToArray(strData, strDelimiter = ',') {
+        strDelimiter = (strDelimiter || ",");
+        var objPattern = new RegExp(
+            (
+                // Delimiters.
+                "(\\" + strDelimiter + "|\\r?\\n|\\r|^)" +
+                // Quoted fields.
+                "(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|" +
+                // Standard fields.
+                "([^\"\\" + strDelimiter + "\\r\\n]*))"
+            ),
+            "gi"
+        );
+        let arrData = [[]];
+
+        let arrMatches = null;
+        while (arrMatches = objPattern.exec(strData)) {
+
+            let strMatchedDelimiter = arrMatches[1];
+
+            if (
+                strMatchedDelimiter.length &&
+                strMatchedDelimiter !== strDelimiter
+            ) {
+                arrData.push([]);
+            }
+
+            let strMatchedValue;
+
+            if (arrMatches[2]) {
+                strMatchedValue = arrMatches[2].replace(
+                    new RegExp("\"\"", "g"),
+                    "\""
+                );
+
+            } else {
+                strMatchedValue = arrMatches[3];
+            }
+            arrData[arrData.length - 1].push(strMatchedValue);
+        }
+        return (arrData);
+    }
+
+    function getFilter() {
+        return getEle('sort').value;
+    }
+
+    function changeSort() {
+        reload(getFilter());
+    }
+
+    function load(filter) {
+
+        let arr = getDataFromLocalStorage(filter);
+
+        getEle('recordcount').innerText = `Found ${arr.length}  record${arr.length > 1 ? 's' : ''}`;
+
+        if (arr.length > 0) {
+            arr.sort();
+            for (let i = 0; i < arr.length; i++) {
+                let data = arr[i],
+                    va = !!data ? data.split(global_separater) : [],
+                    s = !!va && va.length >= 1 ? va[0] : '',
+                    c = !!va && va.length >= 2 ? va[1] : '',
+                    u = !!va && va.length >= 3 ? va[2] : '',
+                    p = !!va && va.length >= 4 ? va[3] : '',
+                    url = !!va && va.length >= 5 ? va[4] : '',
+                    formId = !!va && va.length >= 6 ? va[5] : '';
+
+                createForm(c, u, p, url, s, formId);
+            }
+        }
+
+    }
+
+    function reload(filter) {
+
+        let existing = getEle('existing');
+
+        while (existing.children.length > 0) {
+            existing.removeChild(existing.children[0]);
+        }
+
+        load(filter);
+    }
+
+    function getDataArrFromLocalStorage(filter) {
+        let result = [];
+        if (isSupportedLocalStorage()) {
+            for (let i = 0; i < localStorage.length; i++) {
+
+                let key = localStorage.key(i);
+
+                if (key.startsWith(global_data_key_pref)) {
+                    let value = localStorage.getItem(key);
+                    if (!filter || value.toLowerCase().indexOf(filter.toLowerCase()) !== -1) {
+                        result.push([key, value]);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    function getDataFromLocalStorage(filter) {
+        let result = [];
+
+        if (isSupportedLocalStorage()) {
+            for (let i = 0; i < localStorage.length; i++) {
+                let key = localStorage.key(i);
+
+                if (global_disclaimer == key)
+                    continue;
+
+                let value = localStorage.getItem(key);
+
+                if (!filter || value.toLowerCase().indexOf(filter.toLowerCase()) !== -1) {
+                    result.push(value + global_separater + key);
+                }
+            }
+        }
+        return result;
+    }
+
+    function getFromLocalStorage(k) {
+        if (isSupportedLocalStorage()) {
+            return localStorage.getItem(k);
+        }
+    }
+
+    function setToLocalStorage(k, v) {
+        if (isSupportedLocalStorage() && !!k &&!!v) {
+            localStorage.setItem(k, v);
+        }
+    }
+
+    function removeFromLocalStorage(k) {
+        if (isSupportedLocalStorage()) {
+            localStorage.removeItem(k);
+        }
+    }
+
+    function isSupportedLocalStorage() {
+        let result = !!window.localStorage;
+        if (!result) {
+            alert('Your browser is not support localStorage.');
+            return false;
+        }
+        return true;
+    }
+
+    function appendRecord() {
+
+        let c = getEleValue("company");
+        let u = getEleValue("username");
+        let p = getEleValue("password");
+        let url = getEleValue("url");
+        let s = getEleValue("sort");
+        let formId = global_data_key_pref + new Date().getTime();
+
+        saveToLocalStorage(formId, s, c, u, p, url);
+
+        reload();
+    }
+
+    function save(formId) {
+
+        let c = getEle(formId + "company").value;
+        let u = getEle(formId + "username").value;
+        let p = getEle(formId + "password").value;
+        let url = getEle(formId + "url").value;
+        let s = getEle(formId + "sort").value;
+
+        saveToLocalStorage(formId, s, c, u, p, url);
+
+        reload();
+    }
+
+    function saveToLocalStorage(formId, s, c, u, p, url) {
+
+        if (isInvalid([formId, c, u, p, url, s])) {
+            alert('All fields should not be empty.');
+            return;
+        }
+
+        setToLocalStorage(formId, s + global_separater
+            + c + global_separater
+            + u + global_separater
+            + p + global_separater
+            + url);
+    }
+
+    function isInvalid(arr) {
+        for (let i = 0; i < arr.length; i++) {
+            if (!arr[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function getEleValue(id) {
+        return getEle(id).value;
+    }
+
+    function getEle(id) {
+        return document.getElementById(id);
+    }
+
+    function resetEleValue(id) {
+        getEle(id).value = '';
+    }
+
+    function createForm(c, u, p, url, s, formId) {
+        let form = document.createElement('form');
+        form.id = formId;
+        form.action = url;
+        form.classList = ['form'];
+        form.method = "POST";
+        form.enctype = "application/x-www-form-urlencoded";
+        form.target = "_blank";
+
+        appendInput(form, "sort", s, 'text', 'color:#f0ab00;font-weight:bold;');
+        appendInput(form, "company", c, 'text');
+        appendInput(form, "username", u, 'text');
+        appendInput(form, "password", p, 'password');
+        appendInput(form, "url", url, 'text', 'width:300px;');
+
+        appendA(form, "javascript:save('" + form.id + "')", "<span style='margin:0px 10px'>Save</span>")
+        appendA(form, "javascript:remove('" + form.id + "')", "<span style='margin:0px 10px'>Delete</span>")
+        appendA(form, "javascript:go('" + form.id + "')", "<span style='margin:0px 10px'>Login</span>")
+
+        getEle('existing').appendChild(form);
+    }
+
+    function go(formID) {
+        getEle(formID).submit();
+    }
+
+    function remove(formID) {
+        debugger;
+        getEle('existing').removeChild(getEle(formID));
+        if (isSupportedLocalStorage()) {
+            removeFromLocalStorage(formID);
+        }
+        reload();
+    }
+
+    function appendInput(form, name, value, type, style) {
+        let input = document.createElement('input');
+        input.name = name;
+        input.id = form.id + name;
+        input.value = value;
+        input.type = type;
+        input.classList = ['no-bd'];
+        if (!!style)
+            input.style = style;
+
+        form.appendChild(input)
+    }
+
+    function appendA(form, href, name) {
+        let a = document.createElement('a');
+        a.innerHTML = name;
+        a.href = href;
+        form.appendChild(a);
+    }
+
+    function ackonwledge() {
+        setToLocalStorage(global_disclaimer, "YES");
+        getEle('disclaimer').style = "display:none";
+    }
+
+    function disclaimer() {
+        let ack = getFromLocalStorage(global_disclaimer);
+        if (!ack || ack != "YES") {
+            getEle('disclaimer').style = "display:block";
+        }
+    }
+
+    function handleEventListener() {
+        getEle("import").addEventListener("change", function () {
+            let files = this.files;
+            if (files.length == 0) {
+                console.log("no file selected.");
+                return;
+            }
+            let reader = new FileReader();
+
+            reader.readAsText(files[0]);
+
+            reader.onload = function (e) {
+                let arr = csvToArray(e.target.result);
+                for (let i = 0; i < arr.length; i++) {
+                    setToLocalStorage(arr[i][0], arr[i][1]);
+                }
+                reload(getFilter());
+                resetEleValue("import");
+            }
+        });
+    }
+
+    disclaimer();
+    handleEventListener();
+    reload();
+
+</script>
+
+<style type="text/css">
+    body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-family: Arial, sans-serif;
+    }
+
+    .form {
+        border-bottom: #0A6ED1 dashed thin;
+        padding-bottom: 8px;
+    }
+
+    .input-field {
+        border: none;
+        outline: none;
+        border-bottom: #1dafff solid thin;
+    }
+
+    .lastsection {
+        margin-top: 10px;
+        border-top: #f0ab00 solid thin;
+        border-bottom: #f0ab00 solid thin;
+        padding: 15px;
+    }
+
+    .no-bd {
+        color: #595f6e;
+        border: none;
+        outline: none;
+    }
+
+    .find-records {
+        color: #f0ab00;
+        font-weight: bold;
+        font-size: larger;
+        font-style: italic;
+    }
+
+    .file {
+        position: relative;
+        display: inline-block;
+        background: #d0eeff;
+        border: 1px solid #99D3F5;
+        border-radius: 4px;
+        padding: 4px 12px;
+        overflow: hidden;
+        color: #1E88C7;
+        text-decoration: none;
+        text-indent: 0;
+        line-height: 20px;
+    }
+
+    .file input {
+        position: absolute;
+        font-size: 100px;
+        right: 0;
+        top: 0;
+        opacity: 0;
+    }
+
+    .file:hover {
+        background: #AADFFD;
+        border-color: #78C3F3;
+        color: #004974;
+        text-decoration: none;
+    }
+</style>
+
+</html>
